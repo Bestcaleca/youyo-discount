@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>抽员工大屏展示</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=Orbitron:wght@500;700&family=Playfair+Display:wght@600;700&family=Noto+Sans+SC:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #f8f2e8;
+        --panel: #fff9f0;
+        --text: #2d2119;
+        --muted: #7f6d5b;
+        --line: #e7d7c4;
+        --primary: #c62828;
+        --accent: #f3bf3f;
+        --display-font: "Ma Shan Zheng", "STKaiti", serif;
+        --body-font: "Noto Sans SC", "PingFang SC", sans-serif;
+      }
+
+      body[data-theme="cyber"] {
+        --bg: #0a1020;
+        --panel: #121a32;
+        --text: #dbf6ff;
+        --muted: #7ea8c8;
+        --line: #243451;
+        --primary: #00d0ff;
+        --accent: #74ff70;
+        --display-font: "Orbitron", "Trebuchet MS", sans-serif;
+        --body-font: "Noto Sans SC", "Avenir Next", sans-serif;
+      }
+
+      body[data-theme="gala"] {
+        --bg: #111111;
+        --panel: #1b1917;
+        --text: #f4eadb;
+        --muted: #bca785;
+        --line: #3a3228;
+        --primary: #d7b56f;
+        --accent: #f2dcab;
+        --display-font: "Playfair Display", "Bodoni MT", serif;
+        --body-font: "Noto Sans SC", "Georgia", serif;
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: var(--body-font);
+        background: var(--bg);
+      }
+
+      .page { max-width: 1200px; margin: 0 auto; padding: 12px; }
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 14px;
+      }
+
+      h1 { margin: 0; font-family: var(--display-font); font-size: 42px; }
+      .sub { margin-top: 8px; font-size: 15px; color: var(--muted); }
+
+      .bar {
+        margin-top: 10px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .field {
+        flex: 1;
+        min-height: 46px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 12px;
+        color: var(--text);
+        background: #fff;
+        font-size: 14px;
+      }
+
+      button {
+        border: 0;
+        border-radius: 10px;
+        padding: 12px 16px;
+        cursor: pointer;
+        font-size: 15px;
+        color: #fff;
+        background: var(--primary);
+      }
+
+      .status {
+        margin-top: 10px;
+        font-size: 18px;
+        color: var(--muted);
+      }
+
+      .result-grid {
+        margin-top: 16px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+        gap: 12px;
+      }
+
+      .chip {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 14px;
+        background: #fff;
+      }
+
+      .chip-id { font-size: 20px; color: var(--muted); }
+      .chip-name { margin-top: 6px; font-weight: 700; font-size: 32px; }
+
+      .chip.win-pop {
+        animation: winnerPop 780ms cubic-bezier(0.2, 0.85, 0.25, 1);
+        border-color: color-mix(in srgb, var(--primary) 65%, var(--line) 35%);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 60%, transparent);
+      }
+
+      @keyframes winnerPop {
+        0% { transform: scale(0.72); opacity: 0.3; filter: blur(1px); }
+        55% { transform: scale(1.12); opacity: 1; filter: blur(0); }
+        100% { transform: scale(1); opacity: 1; filter: blur(0); }
+      }
+
+      .flash-overlay {
+        pointer-events: none;
+        position: fixed;
+        inset: 0;
+        background: rgba(255, 255, 255, 0);
+        z-index: 99;
+      }
+
+      .flash-overlay.on { animation: flashPulse 360ms ease-out; }
+      @keyframes flashPulse {
+        0% { background: rgba(255, 255, 255, 0); }
+        20% { background: rgba(255, 255, 255, 0.75); }
+        100% { background: rgba(255, 255, 255, 0); }
+      }
+
+      @media (max-width: 900px) {
+        h1 { font-size: 34px; }
+        .bar { flex-direction: column; align-items: stretch; }
+        .chip-id { font-size: 16px; }
+        .chip-name { font-size: 24px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page">
+      <section class="panel">
+        <h1>抽员工大屏展示</h1>
+        <p id="subText" class="sub">展示页只读控制台状态，请在控制台执行开始/停止/重抽/推进轮次。</p>
+
+        <div class="bar">
+          <div id="planText" class="field">轮次信息加载中...</div>
+          <button id="stageBtn" type="button">全屏</button>
+        </div>
+
+        <div id="statusText" class="status">等待控制台操作</div>
+        <div id="resultGrid" class="result-grid"></div>
+      </section>
+    </div>
+    <div id="flashOverlay" class="flash-overlay"></div>
+
+    <script>
+      const params = new URLSearchParams(location.search);
+      const encoded = params.get("c");
+      const stepParam = Math.max(0, Number(params.get("step")) || 0);
+      const stageParam = params.get("stage") === "1";
+
+      const subText = document.getElementById("subText");
+      const planText = document.getElementById("planText");
+      const statusText = document.getElementById("statusText");
+      const resultGrid = document.getElementById("resultGrid");
+      const stageBtn = document.getElementById("stageBtn");
+      const flashOverlay = document.getElementById("flashOverlay");
+
+      let config = null;
+      let plan = [];
+      let stageMode = stageParam;
+      let pollTimer = null;
+      let rollTimer = null;
+      let lastSeq = -1;
+      let lastRolling = false;
+      let lastLockedSig = "";
+      let currentState = null;
+      const fixedStepIndex = stepParam > 0 ? stepParam - 1 : null;
+
+      function toBase64Url(str) {
+        return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+      }
+
+      function fromBase64Url(str) {
+        const b64 = str.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((str.length + 3) % 4);
+        return decodeURIComponent(escape(atob(b64)));
+      }
+
+      function fp(c) {
+        return toBase64Url(JSON.stringify({ prizes: c.prizes, employees: c.employees || [], eventName: c.eventName }));
+      }
+
+      function controlKey() {
+        return `lottery_emp_control_${fp(config)}`;
+      }
+
+      function prizeLabel(prize, idx) {
+        const tier = String(prize.tier || `${idx + 1}等奖`).trim();
+        const name = String(prize.name || "").trim();
+        return name || tier;
+      }
+
+      function setTheme(theme) {
+        document.body.dataset.theme = ["festive", "cyber", "gala"].includes(theme) ? theme : "festive";
+      }
+
+      function buildPlanFromConfig() {
+        const steps = [];
+        (config.prizes || []).forEach((p, idx) => {
+          const rounds = Math.max(1, Number(p.rounds) || 1);
+          const label = prizeLabel(p, idx);
+          if ((p.drawMode || "fixed_per_round") === "total_and_rounds") {
+            const total = Math.max(0, Number(p.totalPeople) || 0);
+            if (total <= 0) return;
+            const base = Math.floor(total / rounds);
+            let rem = total % rounds;
+            for (let r = 1; r <= rounds; r += 1) {
+              const count = base + (rem > 0 ? 1 : 0);
+              if (rem > 0) rem -= 1;
+              if (count > 0) steps.push({ prizeLabel: label, roundInPrize: r, prizeRounds: rounds, count });
+            }
+          } else {
+            const perRound = Math.max(1, Number(p.perRound) || 1);
+            for (let r = 1; r <= rounds; r += 1) {
+              steps.push({ prizeLabel: label, roundInPrize: r, prizeRounds: rounds, count: perRound });
+            }
+          }
+        });
+        return steps;
+      }
+
+      function sampleCandidates(pool, count) {
+        if (!Array.isArray(pool) || !pool.length) return [];
+        const out = [];
+        const seen = new Set();
+        const limit = Math.min(Math.max(0, Number(count) || 0), pool.length);
+        while (out.length < limit) {
+          const idx = Math.floor(Math.random() * pool.length);
+          const p = pool[idx];
+          if (!p || seen.has(p.id)) continue;
+          seen.add(p.id);
+          out.push(p);
+        }
+        return out;
+      }
+
+      function renderList(list, animate = false) {
+        if (!Array.isArray(list) || !list.length) {
+          resultGrid.innerHTML = '<div class="chip"><div class="chip-name" style="font-size:22px;">等待本轮结果</div></div>';
+          return;
+        }
+        resultGrid.innerHTML = list
+          .map((p) => `<div class="chip"><div class="chip-id">${p.id}</div><div class="chip-name">${p.name}</div></div>`)
+          .join("");
+
+        if (!animate) return;
+        const chips = [...resultGrid.querySelectorAll(".chip")];
+        chips.forEach((chip, i) => {
+          setTimeout(() => chip.classList.add("win-pop"), i * 80);
+        });
+        flashOverlay.classList.remove("on");
+        void flashOverlay.offsetWidth;
+        flashOverlay.classList.add("on");
+      }
+
+      function stepTitle(stepIndex, step) {
+        if (!step) return "计划已完成";
+        return `第 ${stepIndex + 1} 轮 | ${step.prizeLabel} 第${step.roundInPrize}/${step.prizeRounds}轮 | 抽 ${step.count} 人`;
+      }
+
+      function stopRollingPreview() {
+        if (!rollTimer) return;
+        clearInterval(rollTimer);
+        rollTimer = null;
+      }
+
+      function startRollingPreview(state, step) {
+        stopRollingPreview();
+        const run = () => {
+          const list = sampleCandidates(state.pool || [], step ? step.count : 0);
+          renderList(list, false);
+        };
+        run();
+        rollTimer = setInterval(run, 120);
+      }
+
+      async function setStageMode(on) {
+        stageMode = !!on;
+        stageBtn.textContent = stageMode ? "退出全屏" : "全屏";
+
+        const url = new URL(location.href);
+        if (stageMode) {
+          url.searchParams.set("stage", "1");
+        } else {
+          url.searchParams.delete("stage");
+        }
+        history.replaceState(null, "", url.toString());
+
+        try {
+          if (stageMode && document.documentElement.requestFullscreen && !document.fullscreenElement) {
+            await document.documentElement.requestFullscreen();
+          } else if (!stageMode && document.exitFullscreen && document.fullscreenElement) {
+            await document.exitFullscreen();
+          }
+        } catch (e) {
+          console.warn(e);
+        }
+      }
+
+      function normalizeState(parsed) {
+        if (!parsed || !Array.isArray(parsed.pool)) return null;
+        return {
+          pool: parsed.pool,
+          currentStep: Math.max(0, Number(parsed.currentStep) || 0),
+          rolling: !!parsed.rolling,
+          activeStep: Number.isFinite(Number(parsed.activeStep)) ? Number(parsed.activeStep) : -1,
+          candidates: Array.isArray(parsed.candidates) ? parsed.candidates : [],
+          seq: Math.max(0, Number(parsed.seq) || 0)
+        };
+      }
+
+      function readControlState() {
+        const parsed = JSON.parse(localStorage.getItem(controlKey()) || "null");
+        return normalizeState(parsed);
+      }
+
+      function currentDisplayStep(state) {
+        if (fixedStepIndex != null) return fixedStepIndex;
+        if (state.rolling && state.activeStep >= 0) return state.activeStep;
+        if (state.currentStep >= plan.length) return plan.length;
+        return state.currentStep;
+      }
+
+      function refreshFromControl() {
+        const state = readControlState();
+        if (!state) {
+          statusText.textContent = "尚未创建控制台状态，请先在控制台页执行一次操作。";
+          planText.textContent = "等待控制台初始化状态...";
+          stopRollingPreview();
+          renderList([], false);
+          return;
+        }
+
+        currentState = state;
+        const stepIndex = currentDisplayStep(state);
+        const step = plan[stepIndex];
+        planText.textContent = stepTitle(stepIndex, step);
+
+        if (fixedStepIndex != null) {
+          subText.textContent = `当前为单轮展示链接：第 ${fixedStepIndex + 1} 轮`; 
+        }
+
+        if (state.rolling) {
+          statusText.textContent = `滚动中 | 剩余员工：${state.pool.length}`;
+          const rollingStep = plan[state.activeStep >= 0 ? state.activeStep : stepIndex];
+          startRollingPreview(state, rollingStep);
+        } else {
+          stopRollingPreview();
+          const sig = JSON.stringify(state.candidates || []);
+          const shouldAnimate = lastRolling && sig && sig !== lastLockedSig;
+          renderList(state.candidates || [], shouldAnimate);
+          if (state.currentStep >= plan.length) {
+            statusText.textContent = `全部轮次完成 | 剩余员工：${state.pool.length}`;
+          } else {
+            statusText.textContent = `待机中 | 剩余员工：${state.pool.length}`;
+          }
+          lastLockedSig = sig;
+        }
+
+        lastRolling = state.rolling;
+        lastSeq = state.seq;
+      }
+
+      function startPolling() {
+        refreshFromControl();
+        pollTimer = setInterval(() => {
+          const state = readControlState();
+          if (!state) return refreshFromControl();
+          if (state.seq !== lastSeq || state.rolling !== lastRolling) {
+            refreshFromControl();
+          }
+        }, 250);
+      }
+
+      function init() {
+        if (!encoded) {
+          alert("缺少配置参数，返回配置页重新生成链接");
+          location.href = "index.html";
+          return;
+        }
+
+        try {
+          config = JSON.parse(fromBase64Url(encoded));
+        } catch (e) {
+          alert("配置解析失败");
+          location.href = "index.html";
+          return;
+        }
+
+        config.prizes = Array.isArray(config.prizes)
+          ? config.prizes.map((x, i) => ({
+              tier: String(x.tier || `${i + 1}等奖`).trim(),
+              name: String(x.name || "").trim(),
+              drawMode: x.drawMode === "total_and_rounds" ? "total_and_rounds" : "fixed_per_round",
+              rounds: Math.max(1, Number(x.rounds) || 1),
+              perRound: Math.max(1, Number(x.perRound) || 1),
+              totalPeople: Math.max(0, Number(x.totalPeople) || 0)
+            }))
+          : [];
+
+        config.employees = Array.isArray(config.employees)
+          ? config.employees.map((x) => ({ id: String(x.id || "").trim(), name: String(x.name || "").trim() })).filter((x) => x.id && x.name)
+          : [];
+
+        config.theme = params.get("t") || config.theme || "festive";
+        setTheme(config.theme);
+
+        plan = buildPlanFromConfig();
+        setStageMode(stageMode);
+        startPolling();
+
+        stageBtn.addEventListener("click", () => setStageMode(!stageMode));
+        window.addEventListener("beforeunload", () => {
+          if (pollTimer) clearInterval(pollTimer);
+          if (rollTimer) clearInterval(rollTimer);
+        });
+      }
+
+      init();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,372 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>抽员工控制台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-slate-100 text-slate-900">
+    <div class="mx-auto max-w-5xl p-4 md:p-6">
+      <header class="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+        <h1 class="text-2xl font-bold">抽员工控制台</h1>
+        <p class="mt-1 text-sm text-slate-500">主持人操作页：推进轮次、重抽、锁定结果、回退、重置、导出。展示页只保留舞台效果。</p>
+      </header>
+
+      <section class="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+        <div class="grid gap-3 md:grid-cols-2">
+          <div class="rounded-lg border border-slate-200 p-3">
+            <p class="text-sm font-medium">展示页链接（给大屏）</p>
+            <p id="stageUrl" class="mt-1 break-all rounded bg-slate-50 p-2 text-xs text-slate-600"></p>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <button id="copyStageBtn" class="rounded border border-slate-300 px-2 py-1 text-xs" type="button">复制展示链接</button>
+              <button id="openStageBtn" class="rounded border border-slate-300 px-2 py-1 text-xs" type="button">打开展示页</button>
+            </div>
+          </div>
+          <div class="rounded-lg border border-slate-200 p-3">
+            <p class="text-sm font-medium">当前轮次</p>
+            <p id="stepInfo" class="mt-1 text-sm text-slate-700">--</p>
+            <p id="remainInfo" class="mt-1 text-xs text-slate-500">--</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+        <h2 class="text-lg font-semibold">控制操作</h2>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button id="startBtn" class="rounded-md bg-slate-800 px-3 py-2 text-sm text-white" type="button">开始滚动</button>
+          <button id="stopBtn" class="rounded-md bg-slate-800 px-3 py-2 text-sm text-white" type="button">停止并锁定</button>
+          <button id="redrawBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">本轮重抽</button>
+          <button id="nextBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">下一轮</button>
+          <button id="rollbackBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">回退一轮</button>
+          <button id="resetBtn" class="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700" type="button">重置本活动状态</button>
+          <button id="exportBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">导出抽员工记录CSV</button>
+        </div>
+        <p id="opStatus" class="mt-2 text-sm text-slate-500"></p>
+      </section>
+
+      <section class="rounded-xl border border-slate-200 bg-white p-4">
+        <h2 class="text-lg font-semibold">本轮候选（预览）</h2>
+        <div id="candidateGrid" class="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3"></div>
+      </section>
+    </div>
+
+    <script>
+      const params = new URLSearchParams(location.search);
+      const encoded = params.get("c");
+      const stepParam = Math.max(0, Number(params.get("step")) || 0);
+
+      const stageUrlEl = document.getElementById("stageUrl");
+      const stepInfo = document.getElementById("stepInfo");
+      const remainInfo = document.getElementById("remainInfo");
+      const candidateGrid = document.getElementById("candidateGrid");
+      const opStatus = document.getElementById("opStatus");
+
+      let config = null;
+      let state = null;
+      let plan = [];
+      const targetStep = stepParam > 0 ? stepParam - 1 : null;
+
+      function toBase64Url(str) {
+        return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+      }
+      function fromBase64Url(str) {
+        const b64 = str.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((str.length + 3) % 4);
+        return decodeURIComponent(escape(atob(b64)));
+      }
+      function fp(c) {
+        return toBase64Url(JSON.stringify({ prizes: c.prizes, employees: c.employees || [], eventName: c.eventName }));
+      }
+
+      function controlKey() { return `lottery_emp_control_${fp(config)}`; }
+      function logKey() { return `lottery_emp_logs_${fp(config)}`; }
+
+      function prizeLabel(prize, idx) {
+        const tier = String(prize.tier || `${idx + 1}等奖`).trim();
+        const name = String(prize.name || "").trim();
+        return name || tier;
+      }
+
+      function buildPlanFromConfig() {
+        const steps = [];
+        (config.prizes || []).forEach((p, idx) => {
+          const rounds = Math.max(1, Number(p.rounds) || 1);
+          const label = prizeLabel(p, idx);
+          if ((p.drawMode || "fixed_per_round") === "total_and_rounds") {
+            const total = Math.max(0, Number(p.totalPeople) || 0);
+            if (total <= 0) return;
+            const base = Math.floor(total / rounds);
+            let rem = total % rounds;
+            for (let r = 1; r <= rounds; r += 1) {
+              const count = base + (rem > 0 ? 1 : 0);
+              if (rem > 0) rem -= 1;
+              if (count > 0) steps.push({ prizeLabel: label, roundInPrize: r, prizeRounds: rounds, count });
+            }
+          } else {
+            const perRound = Math.max(1, Number(p.perRound) || 1);
+            for (let r = 1; r <= rounds; r += 1) {
+              steps.push({ prizeLabel: label, roundInPrize: r, prizeRounds: rounds, count: perRound });
+            }
+          }
+        });
+        return steps;
+      }
+
+      function initState() {
+        const raw = localStorage.getItem(controlKey());
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.pool)) return parsed;
+          } catch (e) {
+            console.warn(e);
+          }
+        }
+        return {
+          pool: [...(config.employees || [])],
+          currentStep: 0,
+          rolling: false,
+          activeStep: -1,
+          candidates: [],
+          seq: 0,
+          updatedAt: Date.now()
+        };
+      }
+
+      function saveState() {
+        state.updatedAt = Date.now();
+        state.seq += 1;
+        localStorage.setItem(controlKey(), JSON.stringify(state));
+      }
+
+      function getLogs() {
+        return JSON.parse(localStorage.getItem(logKey()) || "[]");
+      }
+
+      function saveLogs(logs) {
+        localStorage.setItem(logKey(), JSON.stringify(logs));
+      }
+
+      function pickCandidates(step) {
+        if (!step || !state.pool.length) return [];
+        const out = [];
+        const seen = new Set();
+        const limit = Math.min(step.count, state.pool.length);
+        while (out.length < limit) {
+          const idx = Math.floor(Math.random() * state.pool.length);
+          const p = state.pool[idx];
+          if (!p || seen.has(p.id)) continue;
+          seen.add(p.id);
+          out.push(p);
+        }
+        return out;
+      }
+
+      function renderCandidates() {
+        const c = state.candidates || [];
+        if (!c.length) {
+          candidateGrid.innerHTML = '<div class="text-sm text-slate-500">暂无候选</div>';
+          return;
+        }
+        candidateGrid.innerHTML = c
+          .map((x) => `<div class="rounded border border-slate-200 bg-slate-50 p-2"><div class="text-xs text-slate-500">${x.id}</div><div class="text-sm font-semibold">${x.name}</div></div>`)
+          .join("");
+      }
+
+      function renderMeta() {
+        const stepIndex = targetStep == null ? state.currentStep : targetStep;
+        const step = plan[stepIndex];
+        if (!step) {
+          stepInfo.textContent = "计划已完成";
+        } else {
+          stepInfo.textContent = `第 ${stepIndex + 1} 轮 | ${step.prizeLabel} 第${step.roundInPrize}/${step.prizeRounds}轮 | 抽 ${step.count} 人`;
+        }
+        remainInfo.textContent = `剩余员工：${state.pool.length} | 状态：${state.rolling ? "滚动中" : "待机"}`;
+        renderCandidates();
+      }
+
+      function setStatus(msg, type = "normal") {
+        opStatus.textContent = msg;
+        opStatus.className = `mt-2 text-sm ${type === "err" ? "text-rose-600" : type === "ok" ? "text-emerald-600" : "text-slate-500"}`;
+      }
+
+      function ensureStepAllowed() {
+        if (targetStep == null) return { ok: true, stepIndex: state.currentStep };
+        if (state.currentStep < targetStep) return { ok: false, msg: `请先完成前 ${targetStep} 轮` };
+        if (state.currentStep > targetStep) return { ok: false, msg: "该轮次已执行" };
+        return { ok: true, stepIndex: targetStep };
+      }
+
+      function startRolling() {
+        const check = ensureStepAllowed();
+        if (!check.ok) return setStatus(check.msg, "err");
+        const step = plan[check.stepIndex];
+        if (!step) return setStatus("无可执行轮次", "err");
+        if (!state.pool.length) return setStatus("抽取池为空", "err");
+
+        state.rolling = true;
+        state.activeStep = check.stepIndex;
+        state.candidates = pickCandidates(step);
+        saveState();
+        renderMeta();
+        setStatus("已开始滚动", "ok");
+      }
+
+      function stopAndLock() {
+        if (!state.rolling) return setStatus("当前不在滚动状态", "err");
+        const step = plan[state.activeStep];
+        if (!step) return setStatus("轮次配置无效", "err");
+
+        const picks = state.candidates && state.candidates.length ? state.candidates : pickCandidates(step);
+        const ids = new Set(picks.map((x) => x.id));
+        state.pool = state.pool.filter((x) => !ids.has(x.id));
+
+        const logs = getLogs();
+        const now = new Date().toLocaleString();
+        picks.forEach((p, idx) => {
+          logs.push({ time: now, round: state.activeStep + 1, prize: step.prizeLabel, index: idx + 1, id: p.id, name: p.name });
+        });
+        saveLogs(logs);
+
+        state.rolling = false;
+        state.currentStep = state.activeStep + 1;
+        state.activeStep = -1;
+        state.candidates = picks;
+        saveState();
+        renderMeta();
+        setStatus("已停止并锁定结果", "ok");
+      }
+
+      function redrawCurrent() {
+        const check = ensureStepAllowed();
+        if (!check.ok) return setStatus(check.msg, "err");
+        const step = plan[check.stepIndex];
+        if (!step) return setStatus("无可执行轮次", "err");
+        if (!state.pool.length) return setStatus("抽取池为空", "err");
+
+        state.candidates = pickCandidates(step);
+        saveState();
+        renderMeta();
+        setStatus("已重抽当前轮候选", "ok");
+      }
+
+      function nextStep() {
+        if (state.currentStep >= plan.length) return setStatus("已经是最后一轮", "err");
+        state.currentStep += 1;
+        state.rolling = false;
+        state.activeStep = -1;
+        state.candidates = [];
+        saveState();
+        renderMeta();
+        setStatus("已进入下一轮", "ok");
+      }
+
+      function rollbackStep() {
+        if (state.currentStep <= 0) return setStatus("已在第一轮", "err");
+        state.currentStep -= 1;
+        state.rolling = false;
+        state.activeStep = -1;
+        state.candidates = [];
+        saveState();
+        renderMeta();
+        setStatus("已回退一轮（注意：已抽人员不会自动回池）", "ok");
+      }
+
+      function resetAll() {
+        if (!confirm("确认重置本活动抽员工状态？")) return;
+        state = {
+          pool: [...(config.employees || [])],
+          currentStep: 0,
+          rolling: false,
+          activeStep: -1,
+          candidates: [],
+          seq: 0,
+          updatedAt: Date.now()
+        };
+        saveState();
+        saveLogs([]);
+        renderMeta();
+        setStatus("已重置", "ok");
+      }
+
+      function exportCsv() {
+        const logs = getLogs();
+        if (!logs.length) return setStatus("暂无记录可导出", "err");
+        const esc = (v) => {
+          const s = String(v ?? "");
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const rows = logs.map((x) => [x.time, x.round, x.prize, x.index, x.id, x.name]);
+        const content = [["时间", "轮次", "奖项", "序号", "工号", "姓名"].join(","), ...rows.map((r) => r.map(esc).join(","))].join("\n");
+        const blob = new Blob(["\ufeff" + content], { type: "text/csv;charset=utf-8;" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "抽员工记录.csv";
+        a.click();
+        URL.revokeObjectURL(a.href);
+        setStatus("导出成功", "ok");
+      }
+
+      function init() {
+        if (!encoded) {
+          alert("缺少配置参数");
+          location.href = "index.html";
+          return;
+        }
+
+        try {
+          config = JSON.parse(fromBase64Url(encoded));
+        } catch (e) {
+          alert("配置解析失败");
+          location.href = "index.html";
+          return;
+        }
+
+        config.prizes = Array.isArray(config.prizes)
+          ? config.prizes.map((x, i) => ({
+              tier: String(x.tier || `${i + 1}等奖`).trim(),
+              name: String(x.name || "").trim(),
+              drawMode: x.drawMode === "total_and_rounds" ? "total_and_rounds" : "fixed_per_round",
+              rounds: Math.max(1, Number(x.rounds) || 1),
+              perRound: Math.max(1, Number(x.perRound) || 1),
+              totalPeople: Math.max(0, Number(x.totalPeople) || 0)
+            }))
+          : [];
+
+        config.employees = Array.isArray(config.employees)
+          ? config.employees.map((x) => ({ id: String(x.id || "").trim(), name: String(x.name || "").trim() })).filter((x) => x.id && x.name)
+          : [];
+
+        plan = buildPlanFromConfig();
+        state = initState();
+        saveState();
+
+        const stageUrl = new URL("employee.html", location.href);
+        stageUrl.searchParams.set("c", encoded);
+        stageUrl.searchParams.set("t", params.get("t") || config.theme || "festive");
+        if (stepParam > 0) stageUrl.searchParams.set("step", String(stepParam));
+        stageUrl.searchParams.set("stage", "1");
+        stageUrlEl.textContent = stageUrl.toString();
+
+        document.getElementById("copyStageBtn").addEventListener("click", () => {
+          navigator.clipboard.writeText(stageUrl.toString()).then(() => setStatus("展示链接已复制", "ok"), () => setStatus("复制失败", "err"));
+        });
+        document.getElementById("openStageBtn").addEventListener("click", () => {
+          window.open(stageUrl.toString(), "_blank");
+        });
+
+        document.getElementById("startBtn").addEventListener("click", startRolling);
+        document.getElementById("stopBtn").addEventListener("click", stopAndLock);
+        document.getElementById("redrawBtn").addEventListener("click", redrawCurrent);
+        document.getElementById("nextBtn").addEventListener("click", nextStep);
+        document.getElementById("rollbackBtn").addEventListener("click", rollbackStep);
+        document.getElementById("resetBtn").addEventListener("click", resetAll);
+        document.getElementById("exportBtn").addEventListener("click", exportCsv);
+
+        renderMeta();
+      }
+
+      init();
+    </script>
+  </body>
+</html>

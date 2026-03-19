@@ -1,0 +1,651 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>年会抽奖配置台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+  </head>
+  <body class="min-h-screen bg-slate-50 text-slate-900">
+    <div class="mx-auto max-w-7xl p-4 md:p-6">
+      <header class="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 class="text-2xl font-bold">年会抽奖配置台</h1>
+            <p class="mt-1 text-sm text-slate-500">Tailwind 版：配置奖品、员工、抽取轮次，并生成转盘链接与每轮抽员工链接（可嵌入 PPT）。</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button class="theme-pill rounded-full border px-3 py-1.5 text-xs" data-theme="festive" type="button">国潮舞台</button>
+            <button class="theme-pill rounded-full border px-3 py-1.5 text-xs" data-theme="cyber" type="button">赛博霓虹</button>
+            <button class="theme-pill rounded-full border px-3 py-1.5 text-xs" data-theme="gala" type="button">黑金颁奖</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+        <div class="mb-3 flex flex-wrap items-center gap-2">
+          <h2 class="text-lg font-semibold">奖项配置</h2>
+          <label class="ml-auto text-sm text-slate-600">概率模式</label>
+          <select id="probModeSelect" class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm">
+            <option value="dynamic_weight">权重模式（按库存动态抽）</option>
+            <option value="percent_100">百分比模式（总和必须100）</option>
+          </select>
+        </div>
+
+        <div id="prizeRows" class="space-y-3"></div>
+
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button id="addPrizeBtn" class="rounded-md bg-slate-800 px-3 py-2 text-sm text-white" type="button">+ 添加奖项</button>
+          <button id="expandAllBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">展开全部</button>
+          <button id="collapseAllBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">折叠全部</button>
+          <button id="resetStoreBtn" class="rounded-md border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700" type="button">重置该活动状态/记录</button>
+        </div>
+        <p class="mt-2 text-xs text-slate-500">奖品名称可空，空时前台显示“几等奖”。每个奖项可配置员工抽取规则：每轮固定人数，或总人数+轮次。</p>
+      </section>
+
+      <section class="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+        <h2 class="text-lg font-semibold">员工名单（手动 + Excel）</h2>
+        <textarea id="employeeInput" class="mt-2 min-h-[180px] w-full rounded-md border border-slate-300 px-3 py-2 text-sm" placeholder="每行一位：\n1001,张三\n1002,李四"></textarea>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <input id="employeeFileInput" type="file" accept=".xlsx,.xls,.csv" class="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm" />
+          <button id="importBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">导入Excel/CSV</button>
+        </div>
+        <p id="importStatus" class="mt-2 text-sm"></p>
+      </section>
+
+      <section class="rounded-xl border border-slate-200 bg-white p-4">
+        <h2 class="text-lg font-semibold">链接与二维码</h2>
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button id="buildWheelBtn" class="rounded-md bg-slate-800 px-3 py-2 text-sm text-white" type="button">生成转盘链接</button>
+          <button id="buildEmpBtn" class="rounded-md bg-slate-800 px-3 py-2 text-sm text-white" type="button">生成抽员工链接</button>
+          <button id="buildCtrlBtn" class="rounded-md bg-slate-800 px-3 py-2 text-sm text-white" type="button">生成控制台链接</button>
+          <button id="previewWheelBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">预览转盘页</button>
+          <button id="previewEmpBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">预览抽员工页</button>
+          <button id="previewCtrlBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">预览控制台页</button>
+          <button id="copyWheelBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">复制转盘链接</button>
+          <button id="copyEmpBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">复制抽员工链接</button>
+          <button id="copyCtrlBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">复制控制台链接</button>
+        </div>
+
+        <div class="mt-3 grid gap-3 md:grid-cols-3">
+          <div class="rounded-lg border border-slate-200 p-3">
+            <p class="text-sm font-medium">转盘页链接</p>
+            <p id="wheelLinkBox" class="mt-1 break-all rounded bg-slate-50 p-2 text-xs text-slate-600">点击“生成转盘链接”后显示</p>
+            <img id="wheelQr" class="mt-2 hidden w-44 rounded border border-slate-200" alt="转盘二维码" />
+          </div>
+          <div class="rounded-lg border border-slate-200 p-3">
+            <p class="text-sm font-medium">抽员工总链接</p>
+            <p id="empLinkBox" class="mt-1 break-all rounded bg-slate-50 p-2 text-xs text-slate-600">点击“生成抽员工链接”后显示</p>
+            <img id="empQr" class="mt-2 hidden w-44 rounded border border-slate-200" alt="抽员工二维码" />
+          </div>
+          <div class="rounded-lg border border-slate-200 p-3">
+            <p class="text-sm font-medium">抽员工控制台总链接</p>
+            <p id="ctrlLinkBox" class="mt-1 break-all rounded bg-slate-50 p-2 text-xs text-slate-600">点击“生成控制台链接”后显示</p>
+            <img id="ctrlQr" class="mt-2 hidden w-44 rounded border border-slate-200" alt="控制台二维码" />
+          </div>
+        </div>
+
+        <div class="mt-4 rounded-lg border border-slate-200 p-3">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <p class="text-sm font-medium">每轮抽员工独立链接（PPT嵌入）</p>
+            <button id="copyAllRoundsBtn" class="rounded border border-slate-300 px-2 py-1 text-xs" type="button">复制全部轮次链接</button>
+          </div>
+          <div id="roundLinks" class="space-y-2 text-xs text-slate-600">生成抽员工链接后显示</div>
+        </div>
+        <div class="mt-3 rounded-lg border border-slate-200 p-3">
+          <div class="mb-2 flex items-center justify-between gap-2">
+            <p class="text-sm font-medium">每轮抽员工控制台链接（主持人）</p>
+            <button id="copyAllCtrlRoundsBtn" class="rounded border border-slate-300 px-2 py-1 text-xs" type="button">复制全部控制台链接</button>
+          </div>
+          <div id="ctrlRoundLinks" class="space-y-2 text-xs text-slate-600">生成控制台链接后显示</div>
+        </div>
+
+        <div class="mt-3 flex flex-wrap gap-2">
+          <button id="exportWheelBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">导出转盘中奖记录CSV</button>
+          <button id="exportEmpBtn" class="rounded-md border border-slate-300 px-3 py-2 text-sm" type="button">导出抽员工记录CSV</button>
+        </div>
+      </section>
+    </div>
+
+    <script>
+      const DEFAULT_PRIZES = [
+        { tier: "一等奖", name: "iPhone", qty: 1, weight: 1, percent: 2, drawMode: "fixed_per_round", rounds: 1, perRound: 1, totalPeople: 1 },
+        { tier: "二等奖", name: "", qty: 3, weight: 3, percent: 8, drawMode: "fixed_per_round", rounds: 1, perRound: 3, totalPeople: 3 },
+        { tier: "三等奖", name: "", qty: 8, weight: 8, percent: 20, drawMode: "total_and_rounds", rounds: 2, perRound: 4, totalPeople: 8 },
+        { tier: "参与奖", name: "谢谢参与", qty: 50, weight: 88, percent: 70, drawMode: "total_and_rounds", rounds: 5, perRound: 10, totalPeople: 50 }
+      ];
+
+      const rowsEl = document.getElementById("prizeRows");
+      const probModeSelect = document.getElementById("probModeSelect");
+      const employeeInput = document.getElementById("employeeInput");
+      const employeeFileInput = document.getElementById("employeeFileInput");
+      const importStatus = document.getElementById("importStatus");
+
+      const wheelLinkBox = document.getElementById("wheelLinkBox");
+      const empLinkBox = document.getElementById("empLinkBox");
+      const ctrlLinkBox = document.getElementById("ctrlLinkBox");
+      const wheelQr = document.getElementById("wheelQr");
+      const empQr = document.getElementById("empQr");
+      const ctrlQr = document.getElementById("ctrlQr");
+      const roundLinksEl = document.getElementById("roundLinks");
+      const ctrlRoundLinksEl = document.getElementById("ctrlRoundLinks");
+      const GENERATED_LINKS_KEY = "lottery_generated_links_v1";
+
+      let wheelUrl = "";
+      let empUrl = "";
+      let ctrlUrl = "";
+      let roundUrls = [];
+      let ctrlRoundUrls = [];
+      let roundPlans = [];
+      let currentTheme = localStorage.getItem("lottery_ui_theme") || "festive";
+
+      function toBase64Url(str) {
+        return btoa(unescape(encodeURIComponent(str))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+      }
+
+      function normalizePrize(input, idx = 0) {
+        const rounds = Math.max(1, Number(input.rounds) || 1);
+        const totalPeople = Math.max(0, Number(input.totalPeople) || 0);
+        return {
+          tier: String(input.tier || `${idx + 1}等奖`).trim(),
+          name: String(input.name || "").trim(),
+          qty: Math.max(0, Number(input.qty) || 0),
+          weight: Math.max(0, Number(input.weight) || 0),
+          percent: Math.max(0, Number(input.percent) || 0),
+          drawMode: input.drawMode === "total_and_rounds" ? "total_and_rounds" : "fixed_per_round",
+          rounds,
+          perRound: Math.max(1, Number(input.perRound) || 1),
+          totalPeople
+        };
+      }
+
+      function normalizeEmployee(input) {
+        return { id: String(input.id || "").trim(), name: String(input.name || "").trim() };
+      }
+
+      function parseEmployees(text) {
+        const lines = String(text || "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+        const out = [];
+        const seen = new Set();
+        for (const line of lines) {
+          const parts = line.split(/[，,\s]+/).filter(Boolean);
+          if (!parts.length) continue;
+          const emp = parts.length === 1
+            ? normalizeEmployee({ id: parts[0], name: parts[0] })
+            : normalizeEmployee({ id: parts[0], name: parts.slice(1).join("") });
+          if (!emp.id || !emp.name || seen.has(emp.id)) continue;
+          seen.add(emp.id);
+          out.push(emp);
+        }
+        return out;
+      }
+
+      function parseEmployeeRows(rows) {
+        if (!Array.isArray(rows) || !rows.length) return [];
+        const head = (rows[0] || []).map((x) => String(x || "").trim().toLowerCase());
+        const idIndex = head.findIndex((x) => ["工号", "员工工号", "id", "employeeid", "employee_id"].includes(x));
+        const nameIndex = head.findIndex((x) => ["姓名", "员工姓名", "name", "employeename", "employee_name"].includes(x));
+        const start = idIndex >= 0 || nameIndex >= 0 ? 1 : 0;
+
+        const out = [];
+        const seen = new Set();
+        for (let i = start; i < rows.length; i += 1) {
+          const row = rows[i] || [];
+          const id = String((idIndex >= 0 ? row[idIndex] : row[0]) ?? "").trim();
+          const name = String((nameIndex >= 0 ? row[nameIndex] : row[1]) ?? "").trim();
+          if (!id || !name || seen.has(id)) continue;
+          seen.add(id);
+          out.push({ id, name });
+        }
+        return out;
+      }
+
+      function buildPlanFromConfig(prizes) {
+        const steps = [];
+        prizes.forEach((p, idx) => {
+          const label = (p.name || p.tier || `${idx + 1}等奖`).trim();
+          const rounds = Math.max(1, Number(p.rounds) || 1);
+          if ((p.drawMode || "fixed_per_round") === "total_and_rounds") {
+            const total = Math.max(0, Number(p.totalPeople) || 0);
+            if (total <= 0) return;
+            const base = Math.floor(total / rounds);
+            let rem = total % rounds;
+            for (let r = 1; r <= rounds; r += 1) {
+              const count = base + (rem > 0 ? 1 : 0);
+              if (rem > 0) rem -= 1;
+              if (count > 0) steps.push({ prizeLabel: label, roundInPrize: r, prizeRounds: rounds, count });
+            }
+          } else {
+            const perRound = Math.max(1, Number(p.perRound) || 1);
+            for (let r = 1; r <= rounds; r += 1) {
+              steps.push({ prizeLabel: label, roundInPrize: r, prizeRounds: rounds, count: perRound });
+            }
+          }
+        });
+        return steps;
+      }
+
+      function addPrizeCard(prize) {
+        const card = document.createElement("div");
+        card.className = "rounded-lg border border-slate-200";
+        card.innerHTML = `
+          <div class="flex items-center justify-between gap-2 border-b border-slate-200 p-3">
+            <p class="text-xs text-slate-600" data-role="summary"></p>
+            <button class="rounded border border-slate-300 px-2 py-1 text-xs" type="button" data-role="toggle">展开编辑</button>
+          </div>
+          <div class="hidden p-3" data-role="body">
+            <div class="grid gap-2 md:grid-cols-2 xl:grid-cols-12 items-end">
+              <label class="text-xs text-slate-600 xl:col-span-2">几等奖<input data-f="tier" class="mt-1 h-10 rounded border border-slate-300 px-2 py-1.5 text-sm" value="${prize.tier || ""}" /></label>
+              <label class="text-xs text-slate-600 xl:col-span-2">奖品名称<input data-f="name" class="mt-1 h-10 rounded border border-slate-300 px-2 py-1.5 text-sm" value="${prize.name || ""}" /></label>
+              <label class="text-xs text-slate-600 xl:col-span-1">数量<input data-f="qty" type="number" class="mt-1 h-10 rounded border border-slate-300 px-2 py-1.5 text-sm" value="${prize.qty}" /></label>
+              <label class="text-xs text-slate-600 xl:col-span-1">权重<input data-f="weight" type="number" class="mt-1 h-10 rounded border border-slate-300 px-2 py-1.5 text-sm" value="${prize.weight}" /></label>
+              <label class="text-xs text-slate-600 xl:col-span-1">百分比<input data-f="percent" type="number" class="mt-1 h-10 rounded border border-slate-300 px-2 py-1.5 text-sm" value="${prize.percent}" /></label>
+              <div class="space-y-1 xl:col-span-4">
+                <p class="text-xs text-slate-600">员工抽取配置</p>
+                <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                  <select data-f="drawMode" class="h-10 rounded border border-slate-300 px-2 py-1.5 text-sm sm:col-span-2 xl:col-span-4">
+                    <option value="fixed_per_round" ${prize.drawMode === "fixed_per_round" ? "selected" : ""}>每轮固定人数</option>
+                    <option value="total_and_rounds" ${prize.drawMode === "total_and_rounds" ? "selected" : ""}>总人数+轮次</option>
+                  </select>
+                  <input data-f="rounds" type="number" class="h-10 rounded border border-slate-300 px-2 py-1.5 text-sm" value="${prize.rounds}" placeholder="轮次" />
+                  <input data-f="perRound" type="number" class="h-10 rounded border border-slate-300 px-2 py-1.5 text-sm" value="${prize.perRound}" placeholder="每轮" />
+                  <input data-f="totalPeople" type="number" class="h-10 rounded border border-slate-300 px-2 py-1.5 text-sm sm:col-span-2 xl:col-span-2" value="${prize.totalPeople}" placeholder="总人数" />
+                </div>
+              </div>
+              <div class="xl:col-span-2">
+                <button class="h-10 w-full rounded border border-rose-300 bg-rose-50 px-2 py-1 text-xs text-rose-700" type="button" data-role="delete">删除奖项</button>
+              </div>
+            </div>
+          </div>
+        `;
+
+        const summaryEl = card.querySelector('[data-role="summary"]');
+        const toggleBtn = card.querySelector('[data-role="toggle"]');
+        const bodyEl = card.querySelector('[data-role="body"]');
+        const deleteBtn = card.querySelector('[data-role="delete"]');
+        const fields = card.querySelectorAll("[data-f]");
+
+        const get = (k) => {
+          const el = card.querySelector(`[data-f="${k}"]`);
+          return el ? String(el.value || "").trim() : "";
+        };
+
+        const updateSummary = () => {
+          const tier = get("tier") || "未命名";
+          const name = get("name") || tier;
+          const qty = get("qty") || "0";
+          const mode = get("drawMode") === "total_and_rounds" ? "总人数+轮次" : "每轮固定人数";
+          summaryEl.textContent = `${tier} | 显示:${name} | 数量:${qty} | ${mode}`;
+        };
+
+        fields.forEach((el) => {
+          el.addEventListener("input", updateSummary);
+          el.addEventListener("change", updateSummary);
+        });
+
+        const setCollapsed = (collapsed) => {
+          bodyEl.classList.toggle("hidden", collapsed);
+          toggleBtn.textContent = collapsed ? "展开编辑" : "收起";
+        };
+
+        toggleBtn.addEventListener("click", () => setCollapsed(!bodyEl.classList.contains("hidden")));
+        deleteBtn.addEventListener("click", () => card.remove());
+
+        updateSummary();
+        setCollapsed(true);
+        rowsEl.appendChild(card);
+      }
+
+      function setAllCardsCollapsed(collapsed) {
+        [...rowsEl.children].forEach((card) => {
+          const bodyEl = card.querySelector('[data-role="body"]');
+          const toggleBtn = card.querySelector('[data-role="toggle"]');
+          if (!bodyEl || !toggleBtn) return;
+          bodyEl.classList.toggle("hidden", collapsed);
+          toggleBtn.textContent = collapsed ? "展开编辑" : "收起";
+        });
+      }
+
+      function readPrizes() {
+        const cards = [...rowsEl.children];
+        return cards.map((card, idx) => {
+          const get = (k) => {
+            const el = card.querySelector(`[data-f="${k}"]`);
+            return el ? el.value : "";
+          };
+          return normalizePrize({
+            tier: get("tier"),
+            name: get("name"),
+            qty: get("qty"),
+            weight: get("weight"),
+            percent: get("percent"),
+            drawMode: get("drawMode"),
+            rounds: get("rounds"),
+            perRound: get("perRound"),
+            totalPeople: get("totalPeople")
+          }, idx);
+        }).filter((x) => x.qty > 0);
+      }
+
+      function buildConfig() {
+        const prizes = readPrizes();
+        if (!prizes.length) throw new Error("请先配置至少一个有效奖项");
+        const probMode = probModeSelect.value || "dynamic_weight";
+
+        if (probMode === "dynamic_weight") {
+          const invalid = prizes.find((x) => x.weight <= 0);
+          if (invalid) throw new Error("权重模式下每个奖项权重必须大于0");
+        } else {
+          const sum = prizes.reduce((s, x) => s + x.percent, 0);
+          if (Math.abs(sum - 100) > 0.0001) throw new Error(`百分比总和必须为100，当前为 ${sum}`);
+        }
+
+        return {
+          eventName: "年会抽奖",
+          createdAt: Date.now(),
+          theme: currentTheme,
+          probMode,
+          prizes,
+          employees: parseEmployees(employeeInput.value)
+        };
+      }
+
+      function fingerprint(config) {
+        return toBase64Url(JSON.stringify({ prizes: config.prizes, employees: config.employees, eventName: config.eventName }));
+      }
+
+      function csvEscape(v) {
+        const s = String(v ?? "");
+        return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+      }
+
+      function downloadCsv(filename, headers, rows) {
+        const content = [headers.join(","), ...rows.map((r) => r.map(csvEscape).join(","))].join("\n");
+        const blob = new Blob(["\ufeff" + content], { type: "text/csv;charset=utf-8;" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(a.href);
+      }
+
+      function urlFor(page, config, extra = {}) {
+        const u = new URL(page, location.href);
+        u.searchParams.set("c", toBase64Url(JSON.stringify(config)));
+        u.searchParams.set("t", config.theme || currentTheme);
+        Object.entries(extra).forEach(([k, v]) => u.searchParams.set(k, String(v)));
+        return u.toString();
+      }
+
+      function showQr(imgEl, text) {
+        if (!/^https?:/i.test(text)) {
+          imgEl.classList.add("hidden");
+          return;
+        }
+        imgEl.src = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(text)}`;
+        imgEl.classList.remove("hidden");
+      }
+
+      function setTheme(theme) {
+        currentTheme = ["festive", "cyber", "gala"].includes(theme) ? theme : "festive";
+        localStorage.setItem("lottery_ui_theme", currentTheme);
+        document.body.classList.remove("bg-slate-50", "bg-slate-900", "bg-zinc-900");
+        document.body.classList.add(currentTheme === "cyber" ? "bg-slate-900" : currentTheme === "gala" ? "bg-zinc-900" : "bg-slate-50");
+
+        document.querySelectorAll(".theme-pill").forEach((p) => {
+          const active = p.dataset.theme === currentTheme;
+          p.classList.toggle("bg-slate-800", active);
+          p.classList.toggle("text-white", active);
+          p.classList.toggle("border-slate-800", active);
+          p.classList.toggle("bg-white", !active);
+          p.classList.toggle("text-slate-700", !active);
+          p.classList.toggle("border-slate-300", !active);
+        });
+      }
+
+      async function importEmployees() {
+        if (!employeeFileInput.files.length) {
+          importStatus.textContent = "请先选择文件";
+          importStatus.className = "mt-2 text-sm text-rose-600";
+          return;
+        }
+        try {
+          const wb = XLSX.read(await employeeFileInput.files[0].arrayBuffer(), { type: "array" });
+          const first = wb.SheetNames[0];
+          if (!first) throw new Error("未找到工作表");
+          const rows = XLSX.utils.sheet_to_json(wb.Sheets[first], { header: 1, defval: "" });
+          const list = parseEmployeeRows(rows);
+          if (!list.length) throw new Error("没有识别到员工数据");
+          employeeInput.value = list.map((x) => `${x.id},${x.name}`).join("\n");
+          importStatus.textContent = `导入成功：${list.length} 位员工`;
+          importStatus.className = "mt-2 text-sm text-emerald-600";
+        } catch (e) {
+          importStatus.textContent = `导入失败：${e.message || "文件格式不正确"}`;
+          importStatus.className = "mt-2 text-sm text-rose-600";
+        }
+      }
+
+      function renderRoundLinks(urls, plan) {
+        if (!urls.length) {
+          roundLinksEl.textContent = "生成抽员工链接后显示";
+          return;
+        }
+        roundLinksEl.innerHTML = urls.map((u, i) => {
+          const p = plan[i];
+          const title = `第${i + 1}轮 | ${p.prizeLabel} 第${p.roundInPrize}/${p.prizeRounds}轮 抽${p.count}人`;
+          return `<div class="rounded border border-slate-200 p-2"><div class="mb-1 text-slate-500">${title}</div><div class="break-all bg-slate-50 p-2">${u}</div><button class="mt-1 rounded border border-slate-300 px-2 py-1" data-round-copy="${i}">复制本轮链接</button></div>`;
+        }).join("");
+
+        roundLinksEl.querySelectorAll("[data-round-copy]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const idx = Number(btn.dataset.roundCopy);
+            navigator.clipboard.writeText(urls[idx]).then(() => alert("已复制本轮链接"), () => alert("复制失败"));
+          });
+        });
+      }
+
+      function renderCtrlRoundLinks(urls, plan) {
+        if (!urls.length) {
+          ctrlRoundLinksEl.textContent = "生成控制台链接后显示";
+          return;
+        }
+        ctrlRoundLinksEl.innerHTML = urls.map((u, i) => {
+          const p = plan[i];
+          const title = `第${i + 1}轮 | ${p.prizeLabel} 第${p.roundInPrize}/${p.prizeRounds}轮 抽${p.count}人`;
+          return `<div class="rounded border border-slate-200 p-2"><div class="mb-1 text-slate-500">${title}</div><div class="break-all bg-slate-50 p-2">${u}</div><button class="mt-1 rounded border border-slate-300 px-2 py-1" data-ctrl-round-copy="${i}">复制本轮控制台链接</button></div>`;
+        }).join("");
+
+        ctrlRoundLinksEl.querySelectorAll("[data-ctrl-round-copy]").forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const idx = Number(btn.dataset.ctrlRoundCopy);
+            navigator.clipboard.writeText(urls[idx]).then(() => alert("已复制本轮控制台链接"), () => alert("复制失败"));
+          });
+        });
+      }
+
+      function saveGeneratedLinks() {
+        localStorage.setItem(GENERATED_LINKS_KEY, JSON.stringify({
+          wheelUrl,
+          empUrl,
+          ctrlUrl,
+          roundUrls,
+          ctrlRoundUrls,
+          roundPlans
+        }));
+      }
+
+      function restoreGeneratedLinks() {
+        try {
+          const saved = JSON.parse(localStorage.getItem(GENERATED_LINKS_KEY) || "null");
+          if (!saved) return;
+          wheelUrl = String(saved.wheelUrl || "");
+          empUrl = String(saved.empUrl || "");
+          ctrlUrl = String(saved.ctrlUrl || "");
+          roundUrls = Array.isArray(saved.roundUrls) ? saved.roundUrls.map((x) => String(x)) : [];
+          ctrlRoundUrls = Array.isArray(saved.ctrlRoundUrls) ? saved.ctrlRoundUrls.map((x) => String(x)) : [];
+          roundPlans = Array.isArray(saved.roundPlans) ? saved.roundPlans : [];
+
+          if (wheelUrl) {
+            wheelLinkBox.textContent = wheelUrl;
+            showQr(wheelQr, wheelUrl);
+          }
+          if (empUrl) {
+            empLinkBox.textContent = empUrl;
+            showQr(empQr, empUrl);
+          }
+          if (ctrlUrl) {
+            ctrlLinkBox.textContent = ctrlUrl;
+            showQr(ctrlQr, ctrlUrl);
+          }
+          if (roundUrls.length) {
+            const fallbackPlan = roundUrls.map((_, i) => ({ prizeLabel: `第${i + 1}轮`, roundInPrize: 1, prizeRounds: 1, count: 0 }));
+            renderRoundLinks(roundUrls, roundPlans.length ? roundPlans : fallbackPlan);
+          }
+          if (ctrlRoundUrls.length) {
+            const fallbackPlan = ctrlRoundUrls.map((_, i) => ({ prizeLabel: `第${i + 1}轮`, roundInPrize: 1, prizeRounds: 1, count: 0 }));
+            renderCtrlRoundLinks(ctrlRoundUrls, roundPlans.length ? roundPlans : fallbackPlan);
+          }
+        } catch (e) {
+          console.warn(e);
+        }
+      }
+
+      function buildWheel() {
+        try {
+          const cfg = buildConfig();
+          wheelUrl = urlFor("wheel.html", cfg);
+          wheelLinkBox.textContent = wheelUrl;
+          showQr(wheelQr, wheelUrl);
+          saveGeneratedLinks();
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+
+      function buildEmployee() {
+        try {
+          const cfg = buildConfig();
+          empUrl = urlFor("employee.html", cfg);
+          ctrlUrl = urlFor("employee-control.html", cfg);
+          empLinkBox.textContent = empUrl;
+          ctrlLinkBox.textContent = ctrlUrl;
+          showQr(empQr, empUrl);
+          showQr(ctrlQr, ctrlUrl);
+
+          const plan = buildPlanFromConfig(cfg.prizes);
+          roundPlans = plan;
+          roundUrls = plan.map((_, i) => urlFor("employee.html", cfg, { step: i + 1 }));
+          ctrlRoundUrls = plan.map((_, i) => urlFor("employee-control.html", cfg, { step: i + 1 }));
+          renderRoundLinks(roundUrls, plan);
+          renderCtrlRoundLinks(ctrlRoundUrls, plan);
+          saveGeneratedLinks();
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+
+      function buildControl() {
+        try {
+          const cfg = buildConfig();
+          ctrlUrl = urlFor("employee-control.html", cfg);
+          ctrlLinkBox.textContent = ctrlUrl;
+          showQr(ctrlQr, ctrlUrl);
+          const plan = buildPlanFromConfig(cfg.prizes);
+          roundPlans = plan;
+          ctrlRoundUrls = plan.map((_, i) => urlFor("employee-control.html", cfg, { step: i + 1 }));
+          renderCtrlRoundLinks(ctrlRoundUrls, plan);
+          saveGeneratedLinks();
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+
+      function copyText(t) {
+        if (!t) return alert("请先生成链接");
+        navigator.clipboard.writeText(t).then(() => alert("已复制"), () => alert("复制失败"));
+      }
+
+      function preview(url) {
+        if (!url) return alert("请先生成链接");
+        location.href = url;
+      }
+
+      function resetCurrentActivity() {
+        try {
+          const cfg = buildConfig();
+          const fp = fingerprint(cfg);
+          localStorage.removeItem(`lottery_stock_${fp}`);
+          localStorage.removeItem(`lottery_drawn_${fp}`);
+          localStorage.removeItem(`lottery_wheel_logs_${fp}`);
+          localStorage.removeItem(`lottery_emp_pool_${fp}`);
+          localStorage.removeItem(`lottery_emp_control_${fp}`);
+          localStorage.removeItem(`lottery_emp_logs_${fp}`);
+          alert("该活动库存、转盘中奖记录、抽员工控制台状态与记录已重置");
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+
+      function exportWheelLogs() {
+        try {
+          const cfg = buildConfig();
+          const fp = fingerprint(cfg);
+          const logs = JSON.parse(localStorage.getItem(`lottery_wheel_logs_${fp}`) || "[]");
+          if (!logs.length) return alert("暂无转盘中奖记录");
+          downloadCsv("转盘中奖记录.csv", ["时间", "工号", "姓名", "奖品"], logs.map((x) => [x.time, x.employeeId || "", x.employeeName || "", x.prize]));
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+
+      function exportEmpLogs() {
+        try {
+          const cfg = buildConfig();
+          const fp = fingerprint(cfg);
+          const logs = JSON.parse(localStorage.getItem(`lottery_emp_logs_${fp}`) || "[]");
+          if (!logs.length) return alert("暂无抽员工记录");
+          downloadCsv("抽员工记录.csv", ["时间", "轮次", "奖项", "序号", "工号", "姓名"], logs.map((x) => [x.time, x.round, x.prize || "", x.index, x.id, x.name]));
+        } catch (e) {
+          alert(e.message);
+        }
+      }
+
+      function init() {
+        DEFAULT_PRIZES.forEach(addPrizeCard);
+        setTheme(currentTheme);
+        restoreGeneratedLinks();
+
+        document.querySelectorAll(".theme-pill").forEach((btn) => btn.addEventListener("click", () => setTheme(btn.dataset.theme)));
+        document.getElementById("addPrizeBtn").addEventListener("click", () => addPrizeCard({ tier: "", name: "", qty: 1, weight: 1, percent: 0, drawMode: "fixed_per_round", rounds: 1, perRound: 1, totalPeople: 1 }));
+        document.getElementById("expandAllBtn").addEventListener("click", () => setAllCardsCollapsed(false));
+        document.getElementById("collapseAllBtn").addEventListener("click", () => setAllCardsCollapsed(true));
+
+        document.getElementById("importBtn").addEventListener("click", importEmployees);
+        document.getElementById("buildWheelBtn").addEventListener("click", buildWheel);
+        document.getElementById("buildEmpBtn").addEventListener("click", buildEmployee);
+        document.getElementById("buildCtrlBtn").addEventListener("click", buildControl);
+        document.getElementById("previewWheelBtn").addEventListener("click", () => preview(wheelUrl));
+        document.getElementById("previewEmpBtn").addEventListener("click", () => preview(empUrl));
+        document.getElementById("previewCtrlBtn").addEventListener("click", () => preview(ctrlUrl));
+        document.getElementById("copyWheelBtn").addEventListener("click", () => copyText(wheelUrl));
+        document.getElementById("copyEmpBtn").addEventListener("click", () => copyText(empUrl));
+        document.getElementById("copyCtrlBtn").addEventListener("click", () => copyText(ctrlUrl));
+        document.getElementById("copyAllRoundsBtn").addEventListener("click", () => {
+          if (!roundUrls.length) return alert("请先生成抽员工链接");
+          navigator.clipboard.writeText(roundUrls.join("\n")).then(() => alert("已复制全部轮次链接"), () => alert("复制失败"));
+        });
+        document.getElementById("copyAllCtrlRoundsBtn").addEventListener("click", () => {
+          if (!ctrlRoundUrls.length) return alert("请先生成控制台链接");
+          navigator.clipboard.writeText(ctrlRoundUrls.join("\n")).then(() => alert("已复制全部控制台链接"), () => alert("复制失败"));
+        });
+
+        document.getElementById("resetStoreBtn").addEventListener("click", resetCurrentActivity);
+        document.getElementById("exportWheelBtn").addEventListener("click", exportWheelLogs);
+        document.getElementById("exportEmpBtn").addEventListener("click", exportEmpLogs);
+      }
+
+      init();
+    </script>
+  </body>
+</html>
